@@ -29,3 +29,13 @@ systemctl --user restart photobooth-app
 pip install pytest photobooth-app
 pytest
 ```
+
+## Druck-Skript (DNP DS40)
+
+`scripts/photobooth_print.sh` ist das Druck-Skript der Fotobox (Gutenprint/CUPS). Es legt keinen Auftrag an, solange der Drucker nicht am USB hängt (`1343:0003`) oder einen Fehler meldet (Klappe offen, Papier leer ...). So werden keine alten Aufträge nachgedruckt, wenn der Drucker wieder da ist. Exit-Code 5 = Drucker nicht bereit.
+
+Einspielen auf der Box:
+
+    sudo install -m 755 scripts/photobooth_print.sh /usr/local/bin/photobooth_print.sh
+
+Share-Befehl in der App: `/usr/local/bin/photobooth_print.sh Dai_Nippon_Printing_DS40 "{filename}" --format 4x6`
