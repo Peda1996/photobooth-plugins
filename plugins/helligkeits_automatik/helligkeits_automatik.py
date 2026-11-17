@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 ISO_STEPS = [100, 200, 400, 800, 1600, 3200, 6400]
 SHUTTER_STEPS = ["1/4000", "1/2000", "1/1000", "1/500", "1/250", "1/125", "1/60", "1/30"]  # fast -> slow
+APERTURE_STEPS = ["4", "4.5", "5", "5.6", "6.3", "7.1", "8", "9", "10", "11", "13", "14", "16", "18", "20", "22", "25"]  # third stops as offered by canon, small number = open
 GAMMA = 2.2  # jpeg mean grey value vs. light: stops = gamma * log2(target/mean)
 
 
@@ -71,17 +72,35 @@ def nearest_index(steps: list, value) -> int:
     return min(range(len(steps)), key=lambda i: abs(steps[i] - value))
 
 
-def exposure_to_parameters(stops: int, iso_base: int, shutter_base: int, iso_range: tuple[int, int], shutter_range: tuple[int, int]) -> dict[str, str]:
-    """distribute whole stops of exposure to iso first and then to the shutter. a range with lo == hi == base means the value is not controlled."""
+def exposure_to_parameters(
+    stops: int,
+    iso_base: int,
+    shutter_base: int,
+    iso_range: tuple[int, int],
+    shutter_range: tuple[int, int],
+    aperture_base: int = 0,
+    aperture_range: tuple[int, int] = (0, 0),
+) -> dict[str, str]:
+    """distribute whole stops of exposure to iso first, then to the shutter and only as third to the aperture.
+    a range with lo == hi == base means the value is not controlled. aperture moves in whole stops (3 entries of the third-stop list)."""
     iso_idx = max(iso_range[0], min(iso_range[1], iso_base + stops))
     remainder = stops - (iso_idx - iso_base)
     shutter_idx = max(shutter_range[0], min(shutter_range[1], shutter_base + remainder))
+    remainder -= shutter_idx - shutter_base
+
+    # positive remainder = more light needed = open the aperture (smaller index), negative = close it
+    max_open_stops = (aperture_base - aperture_range[0]) // 3
+    max_close_stops = (aperture_range[1] - aperture_base) // 3
+    aperture_stops = max(-max_close_stops, min(max_open_stops, remainder))
+    aperture_idx = aperture_base - 3 * aperture_stops
 
     params: dict[str, str] = {}
     if iso_idx != iso_base:
         params["iso"] = str(ISO_STEPS[iso_idx])
     if shutter_idx != shutter_base:
         params["shutterspeed"] = SHUTTER_STEPS[shutter_idx]
+    if aperture_idx != aperture_base:
+        params["aperture"] = APERTURE_STEPS[aperture_idx]
     return params
 
 
@@ -95,16 +114,18 @@ class HelligkeitsAutomatik(BasePlugin[HelligkeitsAutomatikConfig]):
         self._last_faces = 0
         self._corrections = 0
         self._auto_notice = False
+        self._measured = 0  # photos used for the control since start, the first ones are corrected at full strength
 
     def _backend(self):
         from photobooth.container import container  # lazy: avoids circular import while the app config loads plugins
 
         return container.acquisition_service._stills_backend
 
-    def _base(self) -> tuple[int | None, int | None]:
+    def _base(self) -> tuple[int | None, int | None, int | None]:
         """iso and shutter index of the configured still parameters. None if the value is not fixed (camera on Auto or not set), then it is not controlled."""
         iso_idx: int | None = None
         shutter_idx: int | None = None
+        aperture_idx: int | None = None
         try:
             from photobooth.appconfig import appconfig  # lazy: avoids circular import while the app config loads plugins
 
@@ -116,15 +137,18 @@ class HelligkeitsAutomatik(BasePlugin[HelligkeitsAutomatikConfig]):
                     iso_idx = nearest_index(ISO_STEPS, int(param.value))
                 elif param.name == "shutterspeed" and param.value in SHUTTER_STEPS:
                     shutter_idx = SHUTTER_STEPS.index(param.value)
+                elif param.name == "aperture" and str(param.value) in APERTURE_STEPS:
+                    aperture_idx = APERTURE_STEPS.index(str(param.value))
         except Exception as exc:
             logger.debug(f"could not read base still parameters: {exc}")
-        return iso_idx, shutter_idx
+        return iso_idx, shutter_idx, aperture_idx
 
-    def _ranges(self, iso_base: int | None, shutter_base: int | None) -> tuple[int, int, tuple[int, int], tuple[int, int], float, float]:
+    def _ranges(self, iso_base: int | None, shutter_base: int | None, aperture_base: int | None):
         """returns the bases (0 if not controlled), the allowed index ranges and the allowed exposure range in stops"""
         lim = self._config.limits
         iso_b = iso_base if iso_base is not None else 0
         shutter_b = shutter_base if shutter_base is not None else 0
+        aperture_b = aperture_base if aperture_base is not None else 0
 
         iso_range = (iso_b, iso_b)
         if iso_base is not None:
@@ -135,9 +159,15 @@ class HelligkeitsAutomatik(BasePlugin[HelligkeitsAutomatikConfig]):
             slowest = SHUTTER_STEPS.index(lim.shutter_slowest) if lim.shutter_slowest in SHUTTER_STEPS else shutter_base
             shutter_range = (0, max(shutter_base, slowest))
 
-        min_e = (iso_range[0] - iso_b) + (shutter_range[0] - shutter_b)
-        max_e = (iso_range[1] - iso_b) + (shutter_range[1] - shutter_b)
-        return iso_b, shutter_b, iso_range, shutter_range, float(min_e), float(max_e)
+        aperture_range = (aperture_b, aperture_b)
+        if aperture_base is not None and lim.aperture_enabled:
+            widest = APERTURE_STEPS.index(lim.aperture_widest) if lim.aperture_widest in APERTURE_STEPS else aperture_base
+            narrowest = APERTURE_STEPS.index(lim.aperture_narrowest) if lim.aperture_narrowest in APERTURE_STEPS else aperture_base
+            aperture_range = (min(aperture_base, widest), max(aperture_base, narrowest))
+
+        min_e = (iso_range[0] - iso_b) + (shutter_range[0] - shutter_b) - (aperture_range[1] - aperture_b) // 3
+        max_e = (iso_range[1] - iso_b) + (shutter_range[1] - shutter_b) + (aperture_b - aperture_range[0]) // 3
+        return iso_b, shutter_b, aperture_b, iso_range, shutter_range, aperture_range, float(min_e), float(max_e)
 
     @hookimpl
     def acq_still_check(self, file: Path, retry_attempt: int = 0) -> StillRetry | None:
@@ -168,19 +198,23 @@ class HelligkeitsAutomatik(BasePlugin[HelligkeitsAutomatikConfig]):
             logger.info(f"brightness automatic: mean={mean:.1f} ({self._last_faces} faces) within target {common.target_mean}+-{common.tolerance}")
             return
 
-        delta = GAMMA * math.log2(common.target_mean / max(mean, 1.0)) * lim.damping
-        delta = max(-lim.max_step_stops, min(lim.max_step_stops, delta))
+        warmup = lim.warmup_enabled and self._measured < lim.warmup_photos
+        self._measured += 1
+        damping = 1.0 if warmup else lim.damping
+        max_step = lim.warmup_max_step_stops if warmup else lim.max_step_stops
+        delta = GAMMA * math.log2(common.target_mean / max(mean, 1.0)) * damping
+        delta = max(-max_step, min(max_step, delta))
 
-        iso_base, shutter_base = self._base()
-        if iso_base is None and shutter_base is None:
+        iso_base, shutter_base, aperture_base = self._base()
+        if iso_base is None and shutter_base is None and aperture_base is None:
             if not self._auto_notice:
-                logger.warning("brightness automatic inactive: iso and shutterspeed of the still parameters are not fixed values (camera on Auto)")
+                logger.warning("brightness automatic inactive: iso, shutterspeed and aperture of the still parameters are not fixed values (camera on Auto)")
                 self._auto_notice = True
             return
-        iso_b, shutter_b, iso_range, shutter_range, min_e, max_e = self._ranges(iso_base, shutter_base)
+        iso_b, shutter_b, aperture_b, iso_range, shutter_range, aperture_range, min_e, max_e = self._ranges(iso_base, shutter_base, aperture_base)
         self._exposure = max(min_e, min(max_e, self._exposure + delta))
 
-        params = exposure_to_parameters(round(self._exposure), iso_b, shutter_b, iso_range, shutter_range)
+        params = exposure_to_parameters(round(self._exposure), iso_b, shutter_b, iso_range, shutter_range, aperture_b, aperture_range)
         if params != self._applied:
             self._corrections += 1
         self._applied = params
@@ -196,6 +230,7 @@ class HelligkeitsAutomatik(BasePlugin[HelligkeitsAutomatikConfig]):
             pass
         self._applied = {}
         self._exposure = 0.0
+        self._measured = 0
 
     @hookimpl
     def get_stats(self) -> GenericStats | None:
