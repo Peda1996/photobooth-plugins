@@ -58,3 +58,20 @@ def test_disabled_plugin_does_nothing(tmp_path):
     plugin = BlitzWache()
     plugin._config.common.enabled = False
     assert plugin.acq_still_check(_img(tmp_path, "b.jpg", 0)) is None
+
+
+def test_failure_sends_frontend_notification(tmp_path, monkeypatch):
+    from blitz_wache import blitz_wache as bw
+
+    sent = []
+    monkeypatch.setattr(bw, "notify_frontend", sent.append)
+    plugin = BlitzWache()
+    black = _img(tmp_path, "b.jpg", 2)
+    for _ in range(plugin._config.common.failure_after_dark_in_row + 1):
+        plugin.acq_still_check(black)
+    assert sent == ["blitz_wache.failure"] * 2  # from the threshold on, at every dark photo
+
+    sent.clear()
+    plugin._config.common.notify_in_ui = False
+    plugin.acq_still_check(black)
+    assert sent == []

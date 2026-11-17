@@ -9,7 +9,7 @@ Die Plugins liegen als Ordner `plugins/<name>/<name>.py` und werden von der App 
 Prueft jedes Foto per Histogramm auf Helligkeit:
 - **zu dunkel** (Blitz nicht gezuendet): sofortige Neuaufnahme mit Umgebungslicht-Werten (Standard ISO Auto, 1/60)
 - **ueberbelichtet**: Neuaufnahme mit ISO 100, 1/4000
-- nach N dunklen Fotos in Folge (Standard 3) Meldung "BLITZAUSFALL?" im Log und in der Statusanzeige der Admin-Oberflaeche
+- nach N dunklen Fotos in Folge (Standard 3) Meldung "BLITZAUSFALL?" im Log, in der Statusanzeige der Admin-Oberflaeche und als rote Meldung auf dem Bildschirm (einmalig `python3 patch_frontend_texts.py` ausfuehren, damit der Text im Frontend hinterlegt ist; nach einem App-Update wiederholen)
 - Einstellungen in der Admin-Oberflaeche in den Reitern "Allgemein" und "Wiederholung"
 
 **Voraussetzung:** Die App braucht den Hook `acq_still_check` (Branch `feature/acq-still-check-hook` im Fork

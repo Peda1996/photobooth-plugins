@@ -25,6 +25,14 @@ def image_brightness(file: Path) -> tuple[float, float]:
     return mean, dark_share
 
 
+def notify_frontend(key: str) -> None:
+    """show a notification in the frontend via sse. the key lives under translatedFrontendNotifications in the frontend translations"""
+    from photobooth.services.sse import sse_service  # lazy: avoids circular import while the app config loads plugins
+    from photobooth.services.sse.sse_ import SseEventTranslateableFrontendNotification
+
+    sse_service.dispatch_event(SseEventTranslateableFrontendNotification(message_key=key, color="negative", icon="flash_off"))
+
+
 class BlitzWache(BasePlugin[BlitzWacheConfig]):
     def __init__(self):
         super().__init__()
@@ -50,9 +58,15 @@ class BlitzWache(BasePlugin[BlitzWacheConfig]):
 
         if mean < self._config.common.dark_mean_below:
             self._dark_in_row += 1
-            if self._dark_in_row >= self._config.common.failure_after_dark_in_row and not self._failure:
-                self._failure = True
-                logger.error(f"BLITZAUSFALL? {self._dark_in_row} zu dunkle Fotos in Folge. Bitte Blitz pruefen!")
+            if self._dark_in_row >= self._config.common.failure_after_dark_in_row:
+                if not self._failure:
+                    self._failure = True
+                    logger.error(f"BLITZAUSFALL? {self._dark_in_row} zu dunkle Fotos in Folge. Bitte Blitz pruefen!")
+                if self._config.common.notify_in_ui:
+                    try:
+                        notify_frontend("blitz_wache.failure")  # at every further dark photo, so it stays visible until the flash works again
+                    except Exception as exc:
+                        logger.warning(f"could not send frontend notification: {exc}")
             if self._config.retry.retry_dark:
                 self._retries_total += 1
                 return StillRetry(

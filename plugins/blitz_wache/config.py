@@ -11,6 +11,7 @@ class Common(BaseModel):
     enabled: bool = Field(default=True, description="Fotos nach der Aufnahme auf Helligkeit pruefen und bei Blitzausfall reagieren.")
     dark_mean_below: float = Field(default=18, ge=0, le=255, description="Mittlere Helligkeit (0-255) unter der ein Foto als zu dunkel gilt.")
     bright_mean_above: float = Field(default=240, ge=0, le=255, description="Mittlere Helligkeit (0-255) ueber der ein Foto als ueberbelichtet gilt.")
+    notify_in_ui: bool = Field(default=True, description="Bei Blitzausfall eine rote Meldung auf dem Bildschirm einblenden (braucht patch_frontend_texts.py, sonst erscheint der Schluessel statt des Textes).")
     failure_after_dark_in_row: int = Field(default=3, ge=1, le=20, description="Anzahl zu dunkler Fotos in Folge, ab der ein Blitzausfall gemeldet wird.")
 
 
