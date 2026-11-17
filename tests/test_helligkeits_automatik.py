@@ -40,42 +40,42 @@ def test_uncontrolled_values_are_never_touched():
 def test_inactive_when_camera_is_on_auto(tmp_path, monkeypatch):
     plugin, backend = _plugin(monkeypatch)
     monkeypatch.setattr(plugin, "_base", lambda: (None, None, None))
-    plugin.acq_still_check(_img(tmp_path, "d.jpg", 55))
+    plugin.acq_still_check(_img(tmp_path, "d.jpg", 55), 0)
     assert backend.still_parameter_overrides == {} and plugin._auto_notice
 
 
 def test_dark_photo_raises_exposure(tmp_path, monkeypatch):
     plugin, backend = _plugin(monkeypatch)
-    assert plugin.acq_still_check(_img(tmp_path, "d.jpg", 55)) is None
+    assert plugin.acq_still_check(_img(tmp_path, "d.jpg", 55), 0) is None
     assert backend.still_parameter_overrides.get("iso") in ("200", "400")
 
 
 def test_within_tolerance_changes_nothing(tmp_path, monkeypatch):
     plugin, backend = _plugin(monkeypatch)
-    plugin.acq_still_check(_img(tmp_path, "ok.jpg", 110))
+    plugin.acq_still_check(_img(tmp_path, "ok.jpg", 110), 0)
     assert backend.still_parameter_overrides == {}
 
 
 def test_black_photo_is_ignored_as_flash_failure(tmp_path, monkeypatch):
     plugin, backend = _plugin(monkeypatch)
-    plugin.acq_still_check(_img(tmp_path, "b.jpg", 2))
+    plugin.acq_still_check(_img(tmp_path, "b.jpg", 2), 0)
     assert backend.still_parameter_overrides == {}
 
 
 def test_retry_in_progress_is_ignored(tmp_path, monkeypatch):
     plugin, backend = _plugin(monkeypatch)
     backend.still_parameter_overrides = {"iso": "Auto"}  # set by another plugin's retry
-    plugin.acq_still_check(_img(tmp_path, "r.jpg", 55))
+    plugin.acq_still_check(_img(tmp_path, "r.jpg", 55), 0)
     assert backend.still_parameter_overrides == {"iso": "Auto"}
 
 
 def test_converges_up_and_down(tmp_path, monkeypatch):
     plugin, backend = _plugin(monkeypatch)
     for _ in range(4):
-        plugin.acq_still_check(_img(tmp_path, "d.jpg", 40))
+        plugin.acq_still_check(_img(tmp_path, "d.jpg", 40), 0)
     assert plugin._exposure > 1
     for _ in range(8):
-        plugin.acq_still_check(_img(tmp_path, "w.jpg", 230))
+        plugin.acq_still_check(_img(tmp_path, "w.jpg", 230), 0)
     assert plugin._exposure <= 0.5
 
 
@@ -122,25 +122,31 @@ def test_aperture_closes_when_too_bright_and_iso_shutter_at_minimum():
 
 def test_first_photos_are_corrected_at_full_strength(tmp_path, monkeypatch):
     plugin, backend = _plugin(monkeypatch)
-    plugin.acq_still_check(_img(tmp_path, "w1.jpg", 40))  # very dark first photo
+    plugin.acq_still_check(_img(tmp_path, "w1.jpg", 40), 0)  # very dark first photo
     first = plugin._exposure
     assert first > 2.5  # full strength: 2.2 * log2(110/40) = 3.2 stops
 
     plugin2, _ = _plugin(monkeypatch)
     plugin2._config.limits.warmup_photos = 0  # no warmup: damped
-    plugin2.acq_still_check(_img(tmp_path, "w2.jpg", 40))
+    plugin2.acq_still_check(_img(tmp_path, "w2.jpg", 40), 0)
     assert plugin2._exposure < first
 
 
 def test_warmup_switch_off(tmp_path, monkeypatch):
     plugin, _ = _plugin(monkeypatch)
     plugin._config.limits.warmup_enabled = False
-    plugin.acq_still_check(_img(tmp_path, "o.jpg", 40))
+    plugin.acq_still_check(_img(tmp_path, "o.jpg", 40), 0)
     assert plugin._exposure < 2.2
 
 
 def test_after_warmup_damping_applies_again(tmp_path, monkeypatch):
     plugin, _ = _plugin(monkeypatch)
     plugin._measured = plugin._config.limits.warmup_photos
-    plugin.acq_still_check(_img(tmp_path, "d.jpg", 40))
+    plugin.acq_still_check(_img(tmp_path, "d.jpg", 40), 0)
     assert plugin._exposure < 2.2
+
+
+def test_hook_signature_has_no_default_for_retry_attempt():
+    # pluggy does not pass arguments with a default value, the retry photo would then not be recognized
+    import inspect
+    assert inspect.signature(HelligkeitsAutomatik.acq_still_check).parameters["retry_attempt"].default is inspect.Parameter.empty

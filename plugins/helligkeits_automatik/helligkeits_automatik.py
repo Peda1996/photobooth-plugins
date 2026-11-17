@@ -170,7 +170,7 @@ class HelligkeitsAutomatik(BasePlugin[HelligkeitsAutomatikConfig]):
         return iso_b, shutter_b, aperture_b, iso_range, shutter_range, aperture_range, float(min_e), float(max_e)
 
     @hookimpl
-    def acq_still_check(self, file: Path, retry_attempt: int = 0) -> StillRetry | None:
+    def acq_still_check(self, file: Path, retry_attempt: int) -> StillRetry | None:
         if not self._config.common.enabled or retry_attempt > 0:
             return None  # photos of a retry are shot with other parameters and must not influence the control
 

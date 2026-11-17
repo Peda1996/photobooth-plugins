@@ -25,6 +25,27 @@ def image_brightness(file: Path) -> tuple[float, float]:
     return mean, dark_share
 
 
+def brighten_file(file: Path, target: float, max_gain_stops: float) -> float | None:
+    """brightens a jpeg in place with a gamma curve so that its mean grey value gets close to target. returns the mean before, None if nothing was changed"""
+    import math
+
+    with Image.open(file) as img:
+        img.load()
+        grey = img.convert("L")
+        grey.thumbnail((160, 160))
+        hist = grey.histogram()
+        mean = sum(level * count for level, count in enumerate(hist)) / (sum(hist) or 1)
+        if mean >= target or mean < 1:
+            return None
+        gamma = math.log(target / 255) / math.log(max(mean, 1) / 255)  # < 1 brightens
+        gamma = max(gamma, 2 ** (-max_gain_stops / 2.2))  # limit the gain, noise gets visible otherwise
+        lut = [round(255 * (i / 255) ** gamma) for i in range(256)]
+        exif = img.info.get("exif")
+        out = img.convert("RGB").point(lut * 3)
+        out.save(file, format="JPEG", quality=95, **({"exif": exif} if exif else {}))
+    return mean
+
+
 def notify_frontend(key: str) -> None:
     """show a notification in the frontend via sse. the key lives under translatedFrontendNotifications in the frontend translations"""
     from photobooth.services.sse import sse_service  # lazy: avoids circular import while the app config loads plugins
@@ -43,7 +64,7 @@ class BlitzWache(BasePlugin[BlitzWacheConfig]):
         self._failure = False
 
     @hookimpl
-    def acq_still_check(self, file: Path) -> StillRetry | None:
+    def acq_still_check(self, file: Path, retry_attempt: int) -> StillRetry | None:  # no default: pluggy would not pass it
         if not self._config.common.enabled:
             return None
 
@@ -70,10 +91,22 @@ class BlitzWache(BasePlugin[BlitzWacheConfig]):
             if self._config.retry.retry_dark:
                 self._retries_total += 1
                 return StillRetry(
-                    parameters={"iso": self._config.retry.retry_dark_iso, "shutterspeed": self._config.retry.retry_dark_shutterspeed},
+                    parameters={
+                        "iso": self._config.retry.retry_dark_iso,
+                        "shutterspeed": self._config.retry.retry_dark_shutterspeed,
+                        **({"aperture": self._config.retry.retry_dark_aperture} if self._config.retry.retry_dark_aperture else {}),
+                    },
                     reason=f"Foto zu dunkel (Helligkeit {mean:.1f}), Blitz evtl. ausgefallen",
                 )
             return None
+
+        if retry_attempt > 0 and self._config.retry.brighten_retry:
+            try:
+                before = brighten_file(file, self._config.retry.brighten_target, self._config.retry.brighten_max_gain_stops)
+                if before is not None:
+                    logger.info(f"photo after flash failure brightened by software, mean {before:.1f} -> ~{self._config.retry.brighten_target:.0f}")
+            except Exception as exc:
+                logger.warning(f"could not brighten {file}: {exc}")
 
         # photo is fine or only overexposed: dark streak ends, failure state resolved
         self._dark_in_row = 0
