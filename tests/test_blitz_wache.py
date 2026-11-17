@@ -32,7 +32,7 @@ def test_black_image_requests_retry_with_ambient_values(tmp_path):
     plugin = BlitzWache()
     retry = plugin.acq_still_check(_img(tmp_path, "b.jpg", 2), 0)
     assert isinstance(retry, StillRetry)
-    assert retry.parameters == {"iso": "Auto", "shutterspeed": "1/60", "aperture": "4"}
+    assert retry.parameters == {"iso": "Auto", "shutterspeed": "1/30", "aperture": "min"}
 
 
 def test_overexposed_image_requests_retry(tmp_path):

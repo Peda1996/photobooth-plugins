@@ -20,9 +20,9 @@ class Retry(BaseModel):
 
     retry_dark: bool = Field(default=True, description="Bei zu dunklem Foto sofort neu aufnehmen (Umgebungslicht-Werte).")
     retry_dark_iso: str = Field(default="Auto", description="ISO fuer den Wiederholungsversuch bei zu dunklem Foto.")
-    retry_dark_shutterspeed: str = Field(default="1/60", description="Belichtungszeit fuer den Wiederholungsversuch bei zu dunklem Foto.")
+    retry_dark_shutterspeed: str = Field(default="1/30", description="Belichtungszeit fuer den Wiederholungsversuch bei zu dunklem Foto.")
 
-    retry_dark_aperture: str = Field(default="4", description="Blende fuer den Wiederholungsversuch bei zu dunklem Foto (kleine Zahl = mehr Licht). Leer = Blende nicht aendern.")
+    retry_dark_aperture: str = Field(default="min", description="Blende fuer den Wiederholungsversuch bei zu dunklem Foto. \"min\" = die weiteste Blende, die die Kamera gerade anbietet (je nach Zoom z.B. 3.5 oder 4), oder ein fester Wert wie 4. Leer = Blende nicht aendern.")
     brighten_retry: bool = Field(default=True, description="Das Foto der Wiederholung nachtraeglich per Software aufhellen, wenn es dunkler als die Zielhelligkeit ist (nur Fotos nach einem Blitzausfall).")
     brighten_target: float = Field(default=105, ge=60, le=180, description="Zielhelligkeit (0-255) fuer das Aufhellen.")
     brighten_max_gain_stops: float = Field(default=3, ge=0.5, le=5, description="Maximale Aufhellung in Blendenstufen (mehr = mehr Bildrauschen).")
