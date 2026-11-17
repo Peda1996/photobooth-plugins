@@ -11,16 +11,27 @@ DE = "⚡ Blitzausfall? Bitte den Blitz prüfen!"
 EN = "⚡ Flash failure? Please check the flash!"
 anchor = "translatedFrontendNotifications:{"
 
+# strings that exist in the English frontend but are missing in the German translation (they would show up in English)
+DE_EXTRA = {"Take one more!": "Noch ein Foto!"}
+
 files = glob.glob(f"{site}/web/frontend/assets/i18n-*.js")
 if not files:
     sys.exit("keine i18n-Datei gefunden")
 for f in files:
     s = open(f, encoding="utf-8").read()
-    if MARK in s:
+    if MARK in s and not any(f'"{k}":`{v}`' not in s for k, v in DE_EXTRA.items()):
         print(f"schon gepatcht: {f}")
         continue
+    patched_de = False
+    for m in re.finditer(r'[,{]"?de-DE"?:\{', s):
+        extra = "".join(f'"{k}":`{v}`,' for k, v in DE_EXTRA.items() if f'"{k}":`{v}`' not in s[m.end():m.end() + 40000])
+        if extra:
+            s = s[: m.end()] + extra + s[m.end():]
+            patched_de = True
+        break
+
     out, pos, n = [], 0, 0
-    for m in re.finditer(re.escape(anchor), s):
+    for m in ([] if MARK in s else re.finditer(re.escape(anchor), s)):
         end = m.end()
         text = DE if "Es läuft bereits ein Job" in s[end:end + 200] else EN
         out.append(s[pos:end])
