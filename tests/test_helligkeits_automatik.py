@@ -82,3 +82,9 @@ def test_measure_without_face_uses_center(tmp_path, monkeypatch):
     monkeypatch.setattr(ha, "detect_faces", lambda grey: [])
     mean, faces = measure_image(path)
     assert faces == 0 and mean < 80
+
+
+def test_retry_photo_is_ignored(tmp_path, monkeypatch):
+    plugin, backend = _plugin(monkeypatch)
+    plugin.acq_still_check(_img(tmp_path, "r.jpg", 55), retry_attempt=1)
+    assert backend.still_parameter_overrides == {} and plugin._exposure == 0

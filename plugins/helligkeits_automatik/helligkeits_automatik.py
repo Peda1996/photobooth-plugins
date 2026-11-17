@@ -129,9 +129,9 @@ class HelligkeitsAutomatik(BasePlugin[HelligkeitsAutomatikConfig]):
         return iso_max_idx, slowest_idx, float(min_e), float(max_e)
 
     @hookimpl
-    def acq_still_check(self, file: Path) -> StillRetry | None:
-        if not self._config.common.enabled:
-            return None
+    def acq_still_check(self, file: Path, retry_attempt: int = 0) -> StillRetry | None:
+        if not self._config.common.enabled or retry_attempt > 0:
+            return None  # photos of a retry are shot with other parameters and must not influence the control
 
         try:
             backend = self._backend()
