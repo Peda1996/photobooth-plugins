@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+userdata/
+config/
+log/
+media/
+tmp/
+database/
