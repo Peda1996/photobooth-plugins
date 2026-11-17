@@ -17,16 +17,31 @@ def _plugin(monkeypatch):
     backend = SimpleNamespace(still_parameter_overrides={})
     plugin = HelligkeitsAutomatik()
     monkeypatch.setattr(plugin, "_backend", lambda: backend)
-    monkeypatch.setattr(plugin, "_base", lambda: (0, 0))  # iso 100, 1/4000
+    monkeypatch.setattr(plugin, "_base", lambda: (0, 0))  # iso 100, 1/4000 fixed
     return plugin, backend
 
 
 def test_parameters_iso_first_then_shutter():
-    assert exposure_to_parameters(0, 0, 0, 4, 5) == {}
-    assert exposure_to_parameters(2, 0, 0, 4, 5) == {"iso": "400"}
-    assert exposure_to_parameters(6, 0, 0, 4, 5) == {"iso": "1600", "shutterspeed": "1/1000"}
-    assert exposure_to_parameters(20, 0, 0, 4, 5) == {"iso": "1600", "shutterspeed": "1/125"}
-    assert exposure_to_parameters(-2, 0, 0, 4, 5) == {}  # cannot go darker than iso 100 and 1/4000
+    iso, shutter = (0, 4), (0, 5)
+    assert exposure_to_parameters(0, 0, 0, iso, shutter) == {}
+    assert exposure_to_parameters(2, 0, 0, iso, shutter) == {"iso": "400"}
+    assert exposure_to_parameters(6, 0, 0, iso, shutter) == {"iso": "1600", "shutterspeed": "1/1000"}
+    assert exposure_to_parameters(20, 0, 0, iso, shutter) == {"iso": "1600", "shutterspeed": "1/125"}
+    assert exposure_to_parameters(-2, 0, 0, iso, shutter) == {}  # cannot go darker than iso 100 and 1/4000
+
+
+def test_uncontrolled_values_are_never_touched():
+    # iso on auto -> only the shutter may change
+    assert exposure_to_parameters(3, 0, 0, (0, 0), (0, 5)) == {"shutterspeed": "1/500"}
+    # shutter on auto -> only iso may change
+    assert exposure_to_parameters(3, 0, 0, (0, 4), (0, 0)) == {"iso": "800"}
+
+
+def test_inactive_when_camera_is_on_auto(tmp_path, monkeypatch):
+    plugin, backend = _plugin(monkeypatch)
+    monkeypatch.setattr(plugin, "_base", lambda: (None, None))
+    plugin.acq_still_check(_img(tmp_path, "d.jpg", 55))
+    assert backend.still_parameter_overrides == {} and plugin._auto_notice
 
 
 def test_dark_photo_raises_exposure(tmp_path, monkeypatch):

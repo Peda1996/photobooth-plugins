@@ -71,11 +71,11 @@ def nearest_index(steps: list, value) -> int:
     return min(range(len(steps)), key=lambda i: abs(steps[i] - value))
 
 
-def exposure_to_parameters(stops: int, iso_base: int, shutter_base: int, iso_max_idx: int, shutter_slowest_idx: int) -> dict[str, str]:
-    """distribute whole stops of extra light to iso first and then to a slower shutter. negative stops go to iso first, then a faster shutter."""
-    iso_idx = max(0, min(iso_max_idx, iso_base + stops))
+def exposure_to_parameters(stops: int, iso_base: int, shutter_base: int, iso_range: tuple[int, int], shutter_range: tuple[int, int]) -> dict[str, str]:
+    """distribute whole stops of exposure to iso first and then to the shutter. a range with lo == hi == base means the value is not controlled."""
+    iso_idx = max(iso_range[0], min(iso_range[1], iso_base + stops))
     remainder = stops - (iso_idx - iso_base)
-    shutter_idx = max(0, min(shutter_slowest_idx, shutter_base + remainder))
+    shutter_idx = max(shutter_range[0], min(shutter_range[1], shutter_base + remainder))
 
     params: dict[str, str] = {}
     if iso_idx != iso_base:
@@ -94,15 +94,17 @@ class HelligkeitsAutomatik(BasePlugin[HelligkeitsAutomatikConfig]):
         self._last_mean: float | None = None
         self._last_faces = 0
         self._corrections = 0
+        self._auto_notice = False
 
     def _backend(self):
         from photobooth.container import container  # lazy: avoids circular import while the app config loads plugins
 
         return container.acquisition_service._stills_backend
 
-    def _base(self) -> tuple[int, int]:
-        """iso and shutter index of the configured still parameters"""
-        iso_idx, shutter_idx = 0, 0
+    def _base(self) -> tuple[int | None, int | None]:
+        """iso and shutter index of the configured still parameters. None if the value is not fixed (camera on Auto or not set), then it is not controlled."""
+        iso_idx: int | None = None
+        shutter_idx: int | None = None
         try:
             from photobooth.appconfig import appconfig  # lazy: avoids circular import while the app config loads plugins
 
@@ -118,15 +120,24 @@ class HelligkeitsAutomatik(BasePlugin[HelligkeitsAutomatikConfig]):
             logger.debug(f"could not read base still parameters: {exc}")
         return iso_idx, shutter_idx
 
-    def _limits(self, iso_base: int, shutter_base: int) -> tuple[int, int, float, float]:
+    def _ranges(self, iso_base: int | None, shutter_base: int | None) -> tuple[int, int, tuple[int, int], tuple[int, int], float, float]:
+        """returns the bases (0 if not controlled), the allowed index ranges and the allowed exposure range in stops"""
         lim = self._config.limits
-        iso_max_idx = max(iso_base, nearest_index(ISO_STEPS, lim.iso_max))
-        slowest_idx = shutter_base
-        if lim.shutter_slowest in SHUTTER_STEPS:
-            slowest_idx = max(shutter_base, SHUTTER_STEPS.index(lim.shutter_slowest))
-        max_e = (iso_max_idx - iso_base) + (slowest_idx - shutter_base)
-        min_e = -(iso_base + shutter_base)  # down to iso 100 and the fastest shutter
-        return iso_max_idx, slowest_idx, float(min_e), float(max_e)
+        iso_b = iso_base if iso_base is not None else 0
+        shutter_b = shutter_base if shutter_base is not None else 0
+
+        iso_range = (iso_b, iso_b)
+        if iso_base is not None:
+            iso_range = (0, max(iso_base, nearest_index(ISO_STEPS, lim.iso_max)))
+
+        shutter_range = (shutter_b, shutter_b)
+        if shutter_base is not None:
+            slowest = SHUTTER_STEPS.index(lim.shutter_slowest) if lim.shutter_slowest in SHUTTER_STEPS else shutter_base
+            shutter_range = (0, max(shutter_base, slowest))
+
+        min_e = (iso_range[0] - iso_b) + (shutter_range[0] - shutter_b)
+        max_e = (iso_range[1] - iso_b) + (shutter_range[1] - shutter_b)
+        return iso_b, shutter_b, iso_range, shutter_range, float(min_e), float(max_e)
 
     @hookimpl
     def acq_still_check(self, file: Path, retry_attempt: int = 0) -> StillRetry | None:
@@ -161,10 +172,15 @@ class HelligkeitsAutomatik(BasePlugin[HelligkeitsAutomatikConfig]):
         delta = max(-lim.max_step_stops, min(lim.max_step_stops, delta))
 
         iso_base, shutter_base = self._base()
-        iso_max_idx, slowest_idx, min_e, max_e = self._limits(iso_base, shutter_base)
+        if iso_base is None and shutter_base is None:
+            if not self._auto_notice:
+                logger.warning("brightness automatic inactive: iso and shutterspeed of the still parameters are not fixed values (camera on Auto)")
+                self._auto_notice = True
+            return
+        iso_b, shutter_b, iso_range, shutter_range, min_e, max_e = self._ranges(iso_base, shutter_base)
         self._exposure = max(min_e, min(max_e, self._exposure + delta))
 
-        params = exposure_to_parameters(round(self._exposure), iso_base, shutter_base, iso_max_idx, slowest_idx)
+        params = exposure_to_parameters(round(self._exposure), iso_b, shutter_b, iso_range, shutter_range)
         if params != self._applied:
             self._corrections += 1
         self._applied = params
@@ -187,6 +203,7 @@ class HelligkeitsAutomatik(BasePlugin[HelligkeitsAutomatikConfig]):
             id="helligkeits_automatik",
             name="Helligkeits-Automatik",
             stats=[
+                SubStats("Status", "inaktiv: Kamera steht auf Auto" if self._auto_notice else "aktiv"),
                 SubStats("Letzte Helligkeit", self._last_mean, decimals=1),
                 SubStats("Gesichter im letzten Foto", self._last_faces),
                 SubStats("Korrektur (Blendenstufen)", round(self._exposure, 1)),
