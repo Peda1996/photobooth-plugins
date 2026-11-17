@@ -39,7 +39,7 @@ def test_overexposed_image_requests_retry(tmp_path):
     plugin = BlitzWache()
     retry = plugin.acq_still_check(_img(tmp_path, "w.jpg", 252), 0)
     assert isinstance(retry, StillRetry)
-    assert retry.parameters["iso"] == "100"
+    assert retry.parameters["iso"] == "100" and retry.parameters["aperture"] == "max"
 
 
 def test_failure_reported_after_dark_streak_and_resolved(tmp_path):

@@ -21,7 +21,7 @@ class Limits(BaseModel):
     iso_max: int = Field(default=1600, ge=100, le=6400, description="Hoechster ISO-Wert, den die Automatik einstellen darf.")
     shutter_slowest: str = Field(default="1/125", description="Laengste Belichtungszeit, die die Automatik einstellen darf (z.B. 1/125). Gilt, wenn ISO ausgereizt ist.")
     aperture_widest: str = Field(default="4", description="Weiteste Blende (kleinste Zahl), die die Automatik einstellen darf. Die Blende wird erst angefasst, wenn ISO und Belichtungszeit ausgereizt sind, und nur wenn 'aperture' in den Still-Parametern der Kamera fest gesetzt ist.")
-    aperture_narrowest: str = Field(default="8", description="Engste Blende (groesste Zahl), die die Automatik einstellen darf.")
+    aperture_narrowest: str = Field(default="16", description="Engste Blende (groesste Zahl), die die Automatik einstellen darf.")
     warmup_enabled: bool = Field(default=True, description="Schnellstart: bei den ersten Fotos nach dem Start mit voller Staerke regeln, damit die Werte schnell passen.")
     aperture_enabled: bool = Field(default=True, description="Blende als dritten Regler verwenden (erst wenn ISO und Belichtungszeit ausgereizt sind). Nur aktiv, wenn 'aperture' in den Still-Parametern der Kamera fest gesetzt ist.")
     warmup_photos: int = Field(default=3, ge=0, le=10, description="Anzahl der ersten Fotos nach dem Start, bei denen die Automatik mit voller Staerke regelt, damit die Werte schnell passen. 0 = aus.")

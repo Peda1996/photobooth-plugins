@@ -115,7 +115,11 @@ class BlitzWache(BasePlugin[BlitzWacheConfig]):
         if mean > self._config.common.bright_mean_above and self._config.retry.retry_bright:
             self._retries_total += 1
             return StillRetry(
-                parameters={"iso": self._config.retry.retry_bright_iso, "shutterspeed": self._config.retry.retry_bright_shutterspeed},
+                parameters={
+                    "iso": self._config.retry.retry_bright_iso,
+                    "shutterspeed": self._config.retry.retry_bright_shutterspeed,
+                    **({"aperture": self._config.retry.retry_bright_aperture} if self._config.retry.retry_bright_aperture else {}),
+                },
                 reason=f"Foto ueberbelichtet (Helligkeit {mean:.1f})",
             )
         return None

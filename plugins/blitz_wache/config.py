@@ -29,6 +29,7 @@ class Retry(BaseModel):
 
     retry_bright: bool = Field(default=True, description="Bei ueberbelichtetem Foto sofort neu aufnehmen.")
     retry_bright_iso: str = Field(default="100", description="ISO fuer den Wiederholungsversuch bei ueberbelichtetem Foto.")
+    retry_bright_aperture: str = Field(default="max", description="Blende fuer den Wiederholungsversuch bei ueberbelichtetem Foto. \"max\" = die engste Blende, die die Kamera anbietet, oder ein fester Wert wie 16. Leer = Blende nicht aendern.")
     retry_bright_shutterspeed: str = Field(default="1/4000", description="Belichtungszeit fuer den Wiederholungsversuch bei ueberbelichtetem Foto.")
 
 
