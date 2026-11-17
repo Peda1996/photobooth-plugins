@@ -4,8 +4,6 @@ from pathlib import Path
 
 from PIL import Image
 
-from photobooth.appconfig import appconfig
-from photobooth.container import container
 from photobooth.models.genericstats import GenericStats, SubStats
 from photobooth.models.stillretry import StillRetry
 from photobooth.plugins import hookimpl
@@ -98,12 +96,16 @@ class HelligkeitsAutomatik(BasePlugin[HelligkeitsAutomatikConfig]):
         self._corrections = 0
 
     def _backend(self):
+        from photobooth.container import container  # lazy: avoids circular import while the app config loads plugins
+
         return container.acquisition_service._stills_backend
 
     def _base(self) -> tuple[int, int]:
         """iso and shutter index of the configured still parameters"""
         iso_idx, shutter_idx = 0, 0
         try:
+            from photobooth.appconfig import appconfig  # lazy: avoids circular import while the app config loads plugins
+
             cfg = appconfig.cameras.group_backends[appconfig.cameras.index_backend_stills].backend_config
             for param in getattr(cfg, "parameterset_still", []):
                 if not param.enabled:
