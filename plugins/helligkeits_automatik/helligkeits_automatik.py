@@ -19,22 +19,48 @@ APERTURE_STEPS = ["4", "4.5", "5", "5.6", "6.3", "7.1", "8", "9", "10", "11", "1
 GAMMA = 2.2  # jpeg mean grey value vs. light: stops = gamma * log2(target/mean)
 
 
-_cascade = None
+_detector = None
+_detector_failed = False
+MODEL_PATH = Path(__file__).parent / "face_detection_yunet_2023mar.onnx"
 
 
-def detect_faces(grey: Image.Image) -> list[tuple[int, int, int, int]]:
-    """returns face boxes (x, y, w, h) found with the OpenCV haar cascade, empty list if none or opencv is unavailable"""
-    global _cascade
+def _load_detector(size: tuple[int, int]):
+    """OpenCV 5 dropped the haar cascade, the YuNet model (ONNX, shipped next to this file) is used with FaceDetectorYN.
+    older OpenCV (4.x) without FaceDetectorYN falls back to the haar cascade."""
+    global _detector, _detector_failed
+    import cv2
+
+    if _detector is None:
+        if hasattr(cv2, "FaceDetectorYN") and MODEL_PATH.exists():
+            _detector = ("yunet", cv2.FaceDetectorYN.create(str(MODEL_PATH), "", size, 0.7, 0.3, 5000))
+        elif hasattr(cv2, "CascadeClassifier"):
+            _detector = ("haar", cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml"))
+        else:
+            raise RuntimeError("no face detector available in this OpenCV")
+    return _detector
+
+
+def detect_faces(img: Image.Image) -> list[tuple[int, int, int, int]]:
+    """returns face boxes (x, y, w, h) found in the image, empty list if none or detection is unavailable"""
+    global _detector_failed
+    if _detector_failed:
+        return []
     try:
         import cv2
         import numpy as np
 
-        if _cascade is None:
-            _cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
-        faces = _cascade.detectMultiScale(np.asarray(grey), scaleFactor=1.15, minNeighbors=5, minSize=(max(24, grey.width // 25), max(24, grey.width // 25)))
-        return [tuple(int(v) for v in f) for f in faces]
+        rgb = np.asarray(img.convert("RGB"))
+        kind, det = _load_detector((rgb.shape[1], rgb.shape[0]))
+        if kind == "yunet":
+            det.setInputSize((rgb.shape[1], rgb.shape[0]))
+            _, faces = det.detect(cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
+            return [] if faces is None else [tuple(int(v) for v in f[:4]) for f in faces]
+        grey = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
+        found = det.detectMultiScale(grey, scaleFactor=1.15, minNeighbors=5, minSize=(max(24, grey.shape[1] // 25),) * 2)
+        return [tuple(int(v) for v in f) for f in found]
     except Exception as exc:
-        logger.debug(f"face detection not available: {exc}")
+        _detector_failed = True  # do not retry on every photo
+        logger.warning(f"face detection not available, measuring the image center instead: {exc}")
         return []
 
 
@@ -49,10 +75,11 @@ def measure_image(file: Path, use_faces: bool = True) -> tuple[float, int]:
     """returns (mean grey value 0-255, number of faces). the mean is measured on the faces (central part of each box, weighted by size);
     without a face the central half of the image is used, because people are usually in the middle."""
     with Image.open(file) as img:
-        grey = img.convert("L")
-        grey.thumbnail((640, 640))
+        small = img.convert("RGB")
+        small.thumbnail((640, 640))
+    grey = small.convert("L")
 
-    faces = detect_faces(grey) if use_faces else []
+    faces = detect_faces(small) if use_faces else []
     if faces:
         total_area = sum(w * h for _, _, w, h in faces)
         mean = 0.0

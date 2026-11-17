@@ -150,3 +150,13 @@ def test_hook_signature_has_no_default_for_retry_attempt():
     # pluggy does not pass arguments with a default value, the retry photo would then not be recognized
     import inspect
     assert inspect.signature(HelligkeitsAutomatik.acq_still_check).parameters["retry_attempt"].default is inspect.Parameter.empty
+
+
+def test_face_model_is_shipped_and_loadable():
+    import cv2
+
+    assert ha.MODEL_PATH.exists() and ha.MODEL_PATH.stat().st_size > 100_000
+    if hasattr(cv2, "FaceDetectorYN"):
+        ha._detector = None
+        assert ha.detect_faces(Image.new("RGB", (320, 240), (128, 128, 128))) == []  # loads the model, no face in a grey image
+        assert ha._detector is not None and ha._detector[0] == "yunet"
